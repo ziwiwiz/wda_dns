@@ -53,36 +53,18 @@ install_deps() {
     fi
 }
 
-# 生成 dnsmasq 配置（直接从 GitHub 读取域名）
-generate_dnsmasq_config() {
+# 生成 dnsmasq 配置（从已获取的域名内容）
+generate_dnsmasq_config_from_content() {
     local UNLOCK_IP=$1
-    
-    echo -e "${yellow_prefix} 正在从 GitHub 读取域名配置..."
-    
-    # 获取域名列表
-    if command -v curl &> /dev/null; then
-        DOMAINS_CONTENT=$(curl -sL "$DOMAINS_URL")
-    elif command -v wget &> /dev/null; then
-        DOMAINS_CONTENT=$(wget -qO- "$DOMAINS_URL")
-    else
-        echo -e "${red_prefix} 未找到 curl 或 wget"
-        exit 1
-    fi
-    
-    if [ -z "$DOMAINS_CONTENT" ]; then
-        echo -e "${red_prefix} 无法获取域名配置，请检查网络连接"
-        exit 1
-    fi
+    local DOMAINS_CONTENT=$2
     
     # 生成基础配置
     cat > /etc/dnsmasq.d/wda_dns.conf <<EOF
 domain-needed
 bogus-priv
-no-resolv
+resolv-file=/etc/resolv.dnsmasq.conf
 no-poll
 all-servers
-server=8.8.8.8
-server=1.1.1.1
 cache-size=2048
 local-ttl=60
 interface=*
@@ -109,27 +91,56 @@ unlock() {
     detect_os
     install_deps
     
-    systemctl enable dnsmasq >/dev/null 2>&1
-    chattr -i /etc/resolv.conf 2>/dev/null
+    # 先获取域名配置（在修改 DNS 之前，否则无法解析 GitHub）
+    echo -e "${yellow_prefix} 正在从 GitHub 读取域名配置..."
     
-    # 备份 DNS 配置
-    if [ ! -f '/etc/resolv.conf.bak' ]; then
-        cp -f /etc/resolv.conf /etc/resolv.conf.bak
+    if command -v curl &> /dev/null; then
+        DOMAINS_CONTENT=$(curl -sL "$DOMAINS_URL")
+    elif command -v wget &> /dev/null; then
+        DOMAINS_CONTENT=$(wget -qO- "$DOMAINS_URL")
+    else
+        echo -e "${red_prefix} 未找到 curl 或 wget"
+        exit 1
     fi
     
+    if [ -z "$DOMAINS_CONTENT" ]; then
+        echo -e "${red_prefix} 无法获取域名配置，请检查网络连接"
+        exit 1
+    fi
+    
+    echo -e "${green_prefix} 域名配置获取成功"
+    
+    chattr -i /etc/resolv.conf 2>/dev/null
+    
+    # 先备份 resolv.conf（dnsmasq 配置中会引用此文件作为上游 DNS）
+    cp -f /etc/resolv.conf /etc/resolv.dnsmasq.conf
+    echo -e "${yellow_prefix} DNS 已备份到: /etc/resolv.dnsmasq.conf"
+    
+    # 生成 dnsmasq 配置（使用已获取的域名内容）
+    generate_dnsmasq_config_from_content "$UNLOCK_IP" "$DOMAINS_CONTENT"
+    
+    # 验证配置文件是否成功生成
+    if [ ! -f /etc/dnsmasq.d/wda_dns.conf ]; then
+        echo -e "${red_prefix} dnsmasq 配置生成失败"
+        exit 1
+    fi
+    
+    # 配置生成成功后，再修改系统 DNS
     rm -f /etc/resolv.conf
     echo "nameserver 127.0.0.1" > /etc/resolv.conf
     chattr +i /etc/resolv.conf
     
-    # 生成 dnsmasq 配置
-    generate_dnsmasq_config "$UNLOCK_IP"
-    
+    systemctl enable dnsmasq >/dev/null 2>&1
     systemctl restart dnsmasq
     
     if systemctl is-active --quiet dnsmasq; then
         echo -e "${green_prefix} dnsmasq 启动成功"
     else
-        echo -e "${red_prefix} dnsmasq 启动失败"
+        echo -e "${red_prefix} dnsmasq 启动失败，正在恢复 DNS..."
+        # 启动失败时恢复原始 DNS
+        chattr -i /etc/resolv.conf 2>/dev/null
+        cp -f /etc/resolv.dnsmasq.conf /etc/resolv.conf
+        echo -e "${yellow_prefix} 已恢复原始 DNS 配置"
         exit 1
     fi
     
@@ -138,9 +149,7 @@ unlock() {
     echo "---------------------"
     cat /etc/resolv.conf
     echo ""
-    echo -e "${yellow_prefix} DNS 备份文件: /etc/resolv.conf.bak"
-    echo "---------------------"
-    cat /etc/resolv.conf.bak
+    echo -e "${yellow_prefix} DNS 备份文件: /etc/resolv.dnsmasq.conf"
     echo ""
     echo -e "${green_prefix} 解锁配置完成！"
     echo -e "${yellow_prefix} 验证方法: nslookup netflix.com（应返回 ${UNLOCK_IP}）"
@@ -149,11 +158,11 @@ unlock() {
 
 # 恢复 DNS
 restore_dns() {
-    if [ -f '/etc/resolv.conf.bak' ]; then
+    if [ -f '/etc/resolv.dnsmasq.conf' ]; then
         echo -e "${yellow_prefix} 检测到 DNS 备份文件，正在恢复..."
         chattr -i /etc/resolv.conf 2>/dev/null
         rm -f /etc/resolv.conf
-        cp -f /etc/resolv.conf.bak /etc/resolv.conf
+        cp -f /etc/resolv.dnsmasq.conf /etc/resolv.conf
     else
         echo -e "${yellow_prefix} 没有备份 DNS 文件，使用通用 DNS"
         chattr -i /etc/resolv.conf 2>/dev/null

@@ -132,7 +132,7 @@ chattr -i /etc/resolv.conf
 
 1. 运行脚本后需要**重启代理服务**（如 ss/v2ray/trojan）才能生效
 2. 使用 `nslookup netflix.com` 验证解锁是否成功（应返回解锁服务器 IP）
-3. DNS 备份文件保存在 `/etc/resolv.conf.bak`
+3. DNS 备份文件保存在 `/etc/resolv.dnsmasq.conf`
 4. 每次执行都会从 GitHub 获取最新域名配置
 
 ## 📝 常见问题
