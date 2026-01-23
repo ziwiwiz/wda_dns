@@ -79,10 +79,10 @@ bash <(curl -L -s https://raw.githubusercontent.com/lmc999/RegionRestrictionChec
 
 ```bash
 # 检查 Netflix 解析（应返回解锁服务器 IP）
-ping netflix.com
+nslookup netflix.com
 
 # 检查 Disney+ 解析
-ping disneyplus.com
+nslookup disneyplus.com
 ```
 
 ## 🛠️ 常用命令
@@ -131,14 +131,14 @@ chattr -i /etc/resolv.conf
 ## ⚠️ 注意事项
 
 1. 运行脚本后需要**重启代理服务**（如 ss/v2ray/trojan）才能生效
-2. 使用 `ping netflix.com` 验证解锁是否成功（应返回解锁服务器 IP）
+2. 使用 `nslookup netflix.com` 验证解锁是否成功（应返回解锁服务器 IP）
 3. DNS 备份文件保存在 `/etc/resolv.conf.bak`
 4. 每次执行都会从 GitHub 获取最新域名配置
 
 ## 📝 常见问题
 
 ### Q: 如何确认解锁成功？
-A: 运行 `ping netflix.com`，如果返回的 IP 是你设置的解锁服务器 IP，说明解锁配置成功。
+A: 运行 `nslookup netflix.com`，如果返回的 IP 是你设置的解锁服务器 IP，说明解锁配置成功。
 
 ### Q: 解锁后流媒体还是无法访问？
 A: 请确保：

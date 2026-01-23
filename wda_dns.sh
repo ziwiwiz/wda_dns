@@ -143,7 +143,7 @@ unlock() {
     cat /etc/resolv.conf.bak
     echo ""
     echo -e "${green_prefix} 解锁配置完成！"
-    echo -e "${yellow_prefix} 验证方法: ping netflix.com（应返回 ${UNLOCK_IP}）"
+    echo -e "${yellow_prefix} 验证方法: nslookup netflix.com（应返回 ${UNLOCK_IP}）"
     echo -e "${yellow_prefix} 需要重启代理服务（ss/v2ray/trojan 等）后解锁才会生效"
 }
 
