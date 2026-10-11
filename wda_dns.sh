@@ -92,8 +92,28 @@ install_deps() {
 }
 probe() {
     local domain=$1 response
-    response=$(dig @127.0.0.1 "$domain" A +time=3 +tries=1 +noall +comments +answer) || return 1
-    [[ $response == *'status: NOERROR'* && $response == *$'\tA\t'* ]]
+    if ! response=$(dig @127.0.0.1 "$domain" A +time=5 +tries=2 +noall +comments +answer 2>&1); then
+        printf 'DNS 检测失败 (%s):\n%s\n' "$domain" "$response" >&2
+        return 1
+    fi
+    # NOERROR with no A records is a valid NODATA response, not a resolver failure.
+    if [[ $response == *'status: NOERROR,'* ]]; then
+        printf 'DNS 响应正常: %s（不代表流媒体已解锁）\n' "$domain"
+        return 0
+    fi
+    printf 'DNS 检测返回异常状态 (%s):\n%s\n' "$domain" "$response" >&2
+    return 1
+}
+probe_unlock() {
+    local domains=$1 domain
+    # Try independent services where present; custom lists fall back to their first entries.
+    for domain in netflix.com disneyplus.com; do
+        if grep -Fxq "$domain" "$domains" && probe "$domain"; then return 0; fi
+    done
+    while IFS= read -r domain; do
+        if probe "$domain"; then return 0; fi
+    done < <(head -n 3 "$domains")
+    return 1
 }
 unlock() {
     local ip=$1 file=${2:-} source
@@ -164,7 +184,7 @@ UNITEOF
     systemctl daemon-reload
     systemctl restart "$SERVICE"
     systemctl is-active --quiet "$SERVICE"
-    probe "$(head -n 1 "$TMP/domains")" || fail '解锁域名 DNS 查询失败。'
+    probe_unlock "$TMP/domains" || fail '多个分流域名均未获得正常 DNS 响应，详见上方查询结果。'
     probe example.com || fail '普通域名 DNS 查询失败。'
     # Replace the link itself; its target is untouched and saved for restoration.
     { printf 'nameserver 127.0.0.1\n'; awk '$1=="search" || $1=="domain" || $1=="options"' "$STATE/original-content"; } > "$TMP/resolver-new"

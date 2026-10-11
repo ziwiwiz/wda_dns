@@ -11,6 +11,7 @@ class ScriptTests(unittest.TestCase):
     def run_bash(self, body, setup=''):
         with tempfile.TemporaryDirectory() as directory:
             prelude = f'''source "{SCRIPT}"
+REAL_PROBE=$(declare -f probe)
 ROOT="{directory}"
 STATE=$ROOT/state; CONFIG=$ROOT/config; UNIT=$ROOT/unit
 RESOLV=$ROOT/resolv; LEGACY=$ROOT/legacy; LEGACY_BACKUP=$ROOT/backup
@@ -26,6 +27,37 @@ lsattr() {{ :; }}
 
     def assert_ok(self, result):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_probe_accepts_nodata_and_space_formatted_answers(self):
+        self.assert_ok(self.run_bash("""eval "$REAL_PROBE"
+dig() { printf ';; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 33863\n;; flags: qr rd ra; QUERY: 1, ANSWER: 0, AUTHORITY: 1\n'; }
+probe dazn-api.com
+dig() { printf ';; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 20725\nnetflix.com. 5 IN A 207.45.72.1\n'; }
+probe netflix.com
+"""))
+
+    def test_probe_rejects_errors_and_reports_response(self):
+        result = self.run_bash("""eval "$REAL_PROBE"
+for status in SERVFAIL REFUSED NXDOMAIN; do
+ dig() { printf ';; ->>HEADER<<- opcode: QUERY, status: %s, id: 1\n' "$status"; }
+ if probe netflix.com; then exit 1; fi
+done
+dig() { printf 'no servers could be reached\n'; return 9; }
+if probe netflix.com; then exit 1; fi
+""")
+        self.assert_ok(result)
+        for status in ['SERVFAIL', 'REFUSED', 'NXDOMAIN', 'no servers could be reached']:
+            self.assertIn(status, result.stderr)
+
+    def test_probe_falls_back_to_another_configured_domain(self):
+        self.assert_ok(self.run_bash("""printf 'dazn-api.com\nnetflix.com\ndisneyplus.com\n' > "$ROOT/list"
+probe() { [[ $1 == disneyplus.com ]]; }
+probe_unlock "$ROOT/list"
+printf 'custom.example\n' > "$ROOT/list"
+if probe_unlock "$ROOT/list"; then exit 1; fi
+probe() { [[ $1 == custom.example ]]; }
+probe_unlock "$ROOT/list"
+"""))
 
     def test_addresses_and_domains(self):
         self.assert_ok(self.run_bash('''valid_ip 22.22.22.22

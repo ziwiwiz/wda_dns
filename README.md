@@ -29,7 +29,7 @@ sudo bash -c 'bash <(curl -fsSL https://raw.githubusercontent.com/ziwiwiz/wda_dn
 - 使用独立的 `wda-dns.service` 和 `/etc/wda-dns.conf`，只绑定 `127.0.0.1:53`。端口冲突会启动失败并回滚，不自动停止其他 DNS 服务。
 - 下载检查 HTTP 错误、超时；域名小写化、去重、校验格式。空列表和 HTML 错误页直接拒绝。
 - 首次备份保存在 `/var/lib/wda-dns`，重复安装不覆盖；保存 resolv.conf 对象及内容，恢复时保留原符号链接。
-- 配置语法检查、服务启动、分流域名和普通域名 A 查询通过后才切换系统 DNS。安装失败恢复前一次配置与服务状态。
+- 配置语法检查、服务启动、分流域名和普通域名 A 查询返回正常 DNS 状态后才切换系统 DNS。安装失败恢复前一次配置与服务状态。
 - 不使用 `chattr +i` 锁定系统 DNS；对于旧版锁定文件，迁移时解除锁定，失败则重新锁定。
 - 旧版存在 `/etc/dnsmasq.d/wda_dns.conf` 时使用 `/etc/resolv.dnsmasq.conf` 备份升级，移除旧规则并停止旧 dnsmasq。恢复时会重新启动原先运行的 dnsmasq，但不恢复旧解锁规则。其他原有配置不会删除。
 - 无有效备份时恢复命令报错，不擅自写入公共 DNS。
@@ -66,3 +66,7 @@ python3 -m unittest discover -s tests -v
 补充了 Apple TV、Meta AI、JetBrains AI、JAVBus 的入口和已确认接口，以及 YouTube、Steam、Google Play、OpenAI 的部分遗漏域名，共新增 25 条，当前 595 个唯一域名。`google.com` 已覆盖的子域名不重复添加。JAV 按截图的 JAVBus 图标处理。
 
 参考来源：[Apple TV 规则](https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/AppleTV/AppleTV.list)、[YouTube 规则](https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/YouTube/YouTube.list)、[Steam 规则](https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Steam/Steam.list)、[Meta 官方入口](https://ai.meta.com/meta-ai/)、[JetBrains AI 接口文档](https://www.jetbrains.com/help/datalore/configure-ai-assistance.html)、[Google 网络要求](https://support.google.com/work/android/answer/10513641?hl=en)、[OpenAI 网络建议](https://help.openai.com/en/articles/9247338-network-recommendations-for-chatgpt-errors-on-web-and-apps)。网络允许清单和社区分流规则作为候选来源，不能证明所有条目都是解锁必需域名，也不能保证播放、免广告或登录成功。
+
+## DNS 健康检查
+
+安装检测优先查询列表内的 Netflix 和 Disney+，失败时再尝试列表前三项；任一分流域名正常响应即可继续。`NOERROR` 且没有 A 记录（NODATA）也是正常 DNS 响应，例如 `dazn-api.com` 的裸域名可能没有 A 记录。健康检查不要求答案里出现 A 记录，不代表网站可访问或流媒体已解锁。超时、`SERVFAIL`、`REFUSED`、`NXDOMAIN` 会打印查询响应，全部检测失败才回滚。检测使用 UDP，TCP 53 需在目标环境单独排查。
