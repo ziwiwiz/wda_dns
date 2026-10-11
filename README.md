@@ -1,156 +1,68 @@
-# WDA DNS 解锁工具
+# WDA DNS 分流工具
 
-一个基于 dnsmasq 的 DNS 解锁脚本，用于解锁各种流媒体服务。
+仅将列表中的域名查询转发给指定的**解锁 DNS 服务器**，其他域名走原始的非回环上游 DNS。参考 [NodeSeek 教程](https://www.nodeseek.com/post-377672-1)，使用 dnsmasq 的 `server=/domain/DNS`，不再用 `address=` 将所有域名强制映射到同一 IP。
 
-## ✨ 功能特点
+## 使用
 
-- 🚀 **一键安装** - 无需下载，直接在服务器上运行
-- 🎬 **500+ 域名** - 支持全球主流流媒体平台
-- 🔄 **实时读取** - 每次运行自动获取最新域名配置
-- 🤖 **AI 平台支持** - OpenAI、Claude、Gemini 等
-
-## 🎯 支持的服务
-
-| 地区 | 服务 |
-|------|------|
-| 🌍 全球 | Netflix, Disney+, Amazon Prime Video, HBO Max, YouTube |
-| 🇺🇸 美国 | Hulu, Peacock, Paramount+, ESPN+, NFL, NBA TV |
-| 🇬🇧 英国 | BBC iPlayer, ITV Hub, Channel 4, Sky GO, BritBox |
-| 🇯🇵 日本 | Abema, TVer, U-NEXT, DMM, NicoNico, Hulu JP |
-| 🇹🇼 台湾 | KKTV, LiTV, 4GTV, 巴哈姆特动画疯, friDay影音 |
-| 🇭🇰 香港 | myTV SUPER, Viu TV, Now E, HOY TV |
-| 🇰🇷 韩国 | Wavve, Tving, Coupang Play |
-| 🇦🇺 澳洲 | Stan, 9Now, 7plus, Optus Sport |
-| 🤖 AI | OpenAI/ChatGPT, Claude, Gemini, Copilot |
-
-## 🚀 快速开始
-
-### 一键安装（推荐）
-
-在你的**落地机/代理服务器**上执行以下命令：
+要求 Linux、systemd、root、util-linux（flock），支持 Debian/Ubuntu 和 yum/dnf 系统。先下载本修复版本的所有文件，再运行：
 
 ```bash
-# 使用 curl（将 YOUR_IP 替换为你的解锁服务器 IP）
-bash <(curl -sL https://raw.githubusercontent.com/ziwiwiz/wda_dns/main/wda_dns.sh) YOUR_IP
-
-# 或使用 wget
-bash <(wget -qO- https://raw.githubusercontent.com/ziwiwiz/wda_dns/main/wda_dns.sh) YOUR_IP
+sudo bash wda_dns.sh 22.22.22.22
+# 指定其他本地域名文件
+sudo bash wda_dns.sh 22.22.22.22 ./domains.conf
+sudo bash wda_dns.sh s
+sudo bash wda_dns.sh r
+bash wda_dns.sh h
 ```
 
-### 示例
+IP 需替换为你实际获授权使用的解锁 DNS 地址，而不是普通流媒体落地 IP。本地同目录存在 `domains.conf` 时优先使用；否则从脚本中的 `DOMAINS_URL` 下载。一键运行时会从 GitHub 下载域名列表：
 
 ```bash
-# 假设解锁服务器 IP 为 1.2.3.4
-bash <(curl -sL https://raw.githubusercontent.com/ziwiwiz/wda_dns/main/wda_dns.sh) 1.2.3.4
+sudo bash -c 'bash <(curl -fsSL https://raw.githubusercontent.com/ziwiwiz/wda_dns/main/wda_dns.sh) 22.22.22.22'
 ```
 
-### 恢复原始设置
+更新域名时下载新的列表并重新运行安装命令。
+
+## 修复行为
+
+- `server=/域名/解锁DNS` 保留 DNS 查询语义；普通 DNS 上游来自首次安装备份，去除回环地址，不开启 `all-servers`。
+- 使用独立的 `wda-dns.service` 和 `/etc/wda-dns.conf`，只绑定 `127.0.0.1:53`。端口冲突会启动失败并回滚，不自动停止其他 DNS 服务。
+- 下载检查 HTTP 错误、超时；域名小写化、去重、校验格式。空列表和 HTML 错误页直接拒绝。
+- 首次备份保存在 `/var/lib/wda-dns`，重复安装不覆盖；保存 resolv.conf 对象及内容，恢复时保留原符号链接。
+- 配置语法检查、服务启动、分流域名和普通域名 A 查询通过后才切换系统 DNS。安装失败恢复前一次配置与服务状态。
+- 不使用 `chattr +i` 锁定系统 DNS；对于旧版锁定文件，迁移时解除锁定，失败则重新锁定。
+- 旧版存在 `/etc/dnsmasq.d/wda_dns.conf` 时使用 `/etc/resolv.dnsmasq.conf` 备份升级，移除旧规则并停止旧 dnsmasq。恢复时会重新启动原先运行的 dnsmasq，但不恢复旧解锁规则。其他原有配置不会删除。
+- 无有效备份时恢复命令报错，不擅自写入公共 DNS。
+
+## 验证与边界
 
 ```bash
-bash <(curl -sL https://raw.githubusercontent.com/ziwiwiz/wda_dns/main/wda_dns.sh) r
+systemctl status wda-dns
+journalctl -u wda-dns -n 50
+# 指定本地服务，确认查询能正常完成
+dig @127.0.0.1 netflix.com
+dig @127.0.0.1 example.com
+# 确认系统默认查询走本地服务
+dig netflix.com
 ```
 
-### 查看状态
+解析结果不需要等于解锁 DNS 的 IP。DNS 成功只证明解析可用，不能证明流媒体账户、地区和实际播放已经解锁。代理应用若自带 DNS 或 DoH，需要配置其使用本机解析；重启代理不能保证覆盖其自带 DNS。
+
+NetworkManager、systemd-resolved、DHCP 或云初始化可能重新管理 `/etc/resolv.conf`。此版本切换时保存并替换原链接，不修改这些管理器的持久配置；重启后需再次检查。原 DNS 如果全为回环地址会拒绝安装，需要先提供真实上游。`resolv.conf` 是容器挂载点时可能无法替换，安装会报错并尝试回滚。
+
+安装依赖可能更改系统软件包，这些包不会在回滚或恢复时卸载。升级旧版时，如果旧备份本身已经被重复执行破坏为 `127.0.0.1`，脚本会拒绝继续，不会猜测原始 DNS。
+
+## 回归测试
 
 ```bash
-bash <(curl -sL https://raw.githubusercontent.com/ziwiwiz/wda_dns/main/wda_dns.sh) s
+bash -n wda_dns.sh
+python3 -m unittest discover -s tests -v
 ```
 
-## ⚙️ 命令参考
+测试使用临时文件及模拟服务命令，不修改系统 DNS。覆盖规则生成、非法输入、仓库域名校验、重复安装、链接恢复、查询失败回滚和错误列表拒绝。还需在目标 Linux 服务器验证真实 systemd/dnsmasq 行为与播放效果。
 
-| 命令 | 说明 |
-|------|------|
-| `wda_dns.sh <IP>` | 使用指定 IP 启用 DNS 解锁 |
-| `wda_dns.sh r` | 恢复原始 DNS 设置 |
-| `wda_dns.sh s` | 查看当前状态 |
-| `wda_dns.sh h` | 显示帮助信息 |
+## 截图服务的域名补充
 
-## 🔍 验证解锁
+补充了 Apple TV、Meta AI、JetBrains AI、JAVBus 的入口和已确认接口，以及 YouTube、Steam、Google Play、OpenAI 的部分遗漏域名，共新增 25 条，当前 595 个唯一域名。`google.com` 已覆盖的子域名不重复添加。JAV 按截图的 JAVBus 图标处理。
 
-### 流媒体解锁检测
-
-使用第三方脚本检测解锁状态：
-
-```bash
-bash <(curl -L -s https://raw.githubusercontent.com/lmc999/RegionRestrictionCheck/main/check.sh)
-```
-
-### 手动验证
-
-```bash
-# 检查 Netflix 解析（应返回解锁服务器 IP）
-nslookup netflix.com
-
-# 检查 Disney+ 解析
-nslookup disneyplus.com
-```
-
-## 🛠️ 常用命令
-
-### dnsmasq 服务管理
-
-```bash
-# 启动并设置开机自启
-systemctl enable dnsmasq && systemctl start dnsmasq
-
-# 停止并禁用开机自启
-systemctl stop dnsmasq && systemctl disable dnsmasq
-
-# 重启并查看状态
-systemctl restart dnsmasq && systemctl status dnsmasq
-```
-
-### 系统 DNS 管理
-
-```bash
-# 查看本机 DNS
-cat /etc/resolv.conf
-
-# 锁定 DNS 文件（防止被修改）
-chattr +i /etc/resolv.conf
-
-# 解锁 DNS 文件（允许修改）
-chattr -i /etc/resolv.conf
-```
-
-## 🔧 自定义域名
-
-如需添加自定义域名，可以 Fork 本仓库后修改 `domains.conf` 文件。
-
-配置文件格式：
-- 每行一个域名
-- 以 `#` 开头的行为注释
-- 空行会被自动忽略
-
-## 💻 系统要求
-
-- **系统**: CentOS 7+ / Debian 9+ / Ubuntu 18.04+
-- **权限**: Root 权限
-- **网络**: 能访问 GitHub
-
-## ⚠️ 注意事项
-
-1. 运行脚本后需要**重启代理服务**（如 ss/v2ray/trojan）才能生效
-2. 使用 `nslookup netflix.com` 验证解锁是否成功（应返回解锁服务器 IP）
-3. DNS 备份文件保存在 `/etc/resolv.dnsmasq.conf`
-4. 每次执行都会从 GitHub 获取最新域名配置
-
-## 📝 常见问题
-
-### Q: 如何确认解锁成功？
-A: 运行 `nslookup netflix.com`，如果返回的 IP 是你设置的解锁服务器 IP，说明解锁配置成功。
-
-### Q: 解锁后流媒体还是无法访问？
-A: 请确保：
-1. 重启了代理服务
-2. 解锁服务器本身可以访问对应流媒体
-
-### Q: 如何更新域名列表？
-A: 重新运行安装命令即可，脚本会自动获取最新配置。
-
-### Q: 如何完全卸载？
-A: 运行恢复命令 `bash <(curl -sL ...) r` 即可恢复原始设置。
-
-## 📜 License
-
-MIT License
+参考来源：[Apple TV 规则](https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/AppleTV/AppleTV.list)、[YouTube 规则](https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/YouTube/YouTube.list)、[Steam 规则](https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/Steam/Steam.list)、[Meta 官方入口](https://ai.meta.com/meta-ai/)、[JetBrains AI 接口文档](https://www.jetbrains.com/help/datalore/configure-ai-assistance.html)、[Google 网络要求](https://support.google.com/work/android/answer/10513641?hl=en)、[OpenAI 网络建议](https://help.openai.com/en/articles/9247338-network-recommendations-for-chatgpt-errors-on-web-and-apps)。网络允许清单和社区分流规则作为候选来源，不能证明所有条目都是解锁必需域名，也不能保证播放、免广告或登录成功。
